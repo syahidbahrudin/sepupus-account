@@ -6,14 +6,25 @@ import { DefaultChatTransport } from "ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@/components/ui/tool";
+import type { ToolUIPart } from "ai";
 import { MessageSquare, Send } from "lucide-react";
 
 export default function ChatbotPage() {
   const [input, setInput] = useState("");
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
     }),
+    onError: (error) => {
+      console.error("Chat error:", error);
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -56,23 +67,68 @@ export default function ChatbotPage() {
                 }`}
               >
                 <div
-                  className={`max-w-[80%] rounded-lg p-4 ${
+                  className={`max-w-[80%] space-y-2 ${
                     message.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
+                      ? "bg-primary text-primary-foreground rounded-lg p-4"
+                      : ""
                   }`}
                 >
-                  <div className="font-semibold mb-1">
-                    {message.role === "user" ? "You" : "Assistant"}
-                  </div>
-                  <div className="whitespace-pre-wrap">
-                    {message.parts.map((part, index) => {
-                      if (part.type === "text") {
-                        return <span key={index}>{part.text}</span>;
-                      }
-                      return null;
-                    })}
-                  </div>
+                  {message.role === "user" ? (
+                    <>
+                      <div className="font-semibold mb-1">You</div>
+                      <div className="whitespace-pre-wrap">
+                        {message.parts.map((part, index) => {
+                          if (part.type === "text") {
+                            return <span key={index}>{part.text}</span>;
+                          }
+                          return null;
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-semibold mb-2">Assistant</div>
+                      <div className="space-y-2">
+                        {message.parts.map((part, index) => {
+                          if (part.type === "text") {
+                            return (
+                              <div
+                                key={index}
+                                className="bg-muted rounded-lg p-4 whitespace-pre-wrap"
+                              >
+                                {part.text}
+                              </div>
+                            );
+                          }
+                          if (
+                            part.type.startsWith("tool-") &&
+                            "toolCallId" in part
+                          ) {
+                            const toolPart = part as ToolUIPart;
+                            return (
+                              <Tool key={toolPart.toolCallId} defaultOpen>
+                                <ToolHeader
+                                  type={toolPart.type}
+                                  state={toolPart.state}
+                                />
+                                <ToolContent>
+                                  <ToolInput input={toolPart.input} />
+                                  {toolPart.state === "output-available" ||
+                                  toolPart.state === "output-error" ? (
+                                    <ToolOutput
+                                      output={toolPart.output}
+                                      errorText={toolPart.errorText}
+                                    />
+                                  ) : null}
+                                </ToolContent>
+                              </Tool>
+                            );
+                          }
+                          return null;
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -81,6 +137,18 @@ export default function ChatbotPage() {
                 <div className="max-w-[80%] rounded-lg p-4 bg-muted">
                   <div className="font-semibold mb-1">Assistant</div>
                   <div>Thinking...</div>
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="flex justify-start">
+                <div className="max-w-[80%] rounded-lg p-4 bg-destructive/10 border border-destructive/20">
+                  <div className="font-semibold mb-1 text-destructive">
+                    Error
+                  </div>
+                  <div className="text-destructive">
+                    {error.message || "An error occurred"}
+                  </div>
                 </div>
               </div>
             )}
