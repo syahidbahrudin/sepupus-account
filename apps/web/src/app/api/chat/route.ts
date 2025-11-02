@@ -1,4 +1,5 @@
-import { streamText } from "ai";
+import { streamText, convertToModelMessages, type UIMessage, type LanguageModel } from "ai";
+import { z } from "zod";
 import { openai } from "@ai-sdk/openai";
 import { appRouter } from "@sepupus-account/api/routers/index";
 import { createContext } from "@sepupus-account/api/context";
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
 		}
 
 		const body = await req.json();
-		const { messages } = body;
+		const { messages }: { messages: UIMessage[] } = body;
 
 		// Create tRPC context - create a NextRequest from the Request
 		const { NextRequest } = await import("next/server");
@@ -28,22 +29,14 @@ export async function POST(req: Request) {
 		const caller = appRouter.createCaller(ctx);
 
 		const result = streamText({
-			model: openai("gpt-4o-mini"),
-			messages,
-			maxSteps: 5,
+			model: openai("gpt-5-mini") as unknown as LanguageModel,
+			messages: convertToModelMessages(messages),
 			tools: {
 				getFinancialSummary: {
 					description: "Get summary of financial data including short money, daily/monthly/yearly income",
-					parameters: {
-						type: "object",
-						properties: {
-							period: {
-								type: "string",
-								enum: ["daily", "monthly", "yearly", "all"],
-								description: "The time period for the summary",
-							},
-						},
-					},
+					inputSchema: z.object({
+						period: z.enum(["daily", "monthly", "yearly", "all"]).describe("The time period for the summary"),
+					}),
 					execute: async ({ period }) => {
 						if (period === "daily" || period === "all") {
 							const daily = await caller.analytics.getDailyIncome({});
@@ -63,14 +56,11 @@ export async function POST(req: Request) {
 				},
 				getReceipts: {
 					description: "Get receipts with optional filters",
-					parameters: {
-						type: "object",
-						properties: {
-							search: { type: "string", description: "Search term" },
-							category: { type: "string", description: "Filter by category" },
-							limit: { type: "number", description: "Limit results" },
-						},
-					},
+					inputSchema: z.object({
+						search: z.string().optional().describe("Search term"),
+						category: z.string().optional().describe("Filter by category"),
+						limit: z.number().optional().default(10).describe("Limit results"),
+					}),
 					execute: async ({ search, category, limit = 10 }) => {
 						const receipts = await caller.receipts.getAll({
 							search,
@@ -82,18 +72,11 @@ export async function POST(req: Request) {
 				},
 				getInventory: {
 					description: "Get inventory items with optional filters",
-					parameters: {
-						type: "object",
-						properties: {
-							type: {
-								type: "string",
-								enum: ["kekal", "tidak_kekal"],
-								description: "Filter by inventory type",
-							},
-							search: { type: "string", description: "Search term" },
-							limit: { type: "number", description: "Limit results" },
-						},
-					},
+					inputSchema: z.object({
+						type: z.enum(["kekal", "tidak_kekal"]).optional().describe("Filter by inventory type"),
+						search: z.string().optional().describe("Search term"),
+						limit: z.number().optional().default(50).describe("Limit results"),
+					}),
 					execute: async ({ type, search, limit = 50 }) => {
 						const inventory = await caller.inventory.getAll({
 							type: type as any,
@@ -105,14 +88,11 @@ export async function POST(req: Request) {
 				},
 				getProducts: {
 					description: "Get products with optional filters",
-					parameters: {
-						type: "object",
-						properties: {
-							search: { type: "string", description: "Search term" },
-							category: { type: "string", description: "Filter by category" },
-							limit: { type: "number", description: "Limit results" },
-						},
-					},
+					inputSchema: z.object({
+						search: z.string().optional().describe("Search term"),
+						category: z.string().optional().describe("Filter by category"),
+						limit: z.number().optional().default(50).describe("Limit results"),
+					}),
 					execute: async ({ search, category, limit = 50 }) => {
 						const products = await caller.products.getAll({
 							search,
@@ -124,22 +104,14 @@ export async function POST(req: Request) {
 				},
 				createReceipt: {
 					description: "Create a new receipt",
-					parameters: {
-						type: "object",
-						properties: {
-							title: { type: "string", description: "Receipt title" },
-							amount: { type: "string", description: "Amount" },
-							date: { type: "string", description: "Date (ISO format)" },
-							category: { type: "string", description: "Category" },
-							type: {
-								type: "string",
-								enum: ["income", "expense"],
-								description: "Receipt type",
-							},
-							description: { type: "string", description: "Description" },
-						},
-						required: ["title", "amount", "date", "category", "type"],
-					},
+					inputSchema: z.object({
+						title: z.string().describe("Receipt title"),
+						amount: z.string().describe("Amount"),
+						date: z.string().describe("Date (ISO format)"),
+						category: z.string().describe("Category"),
+						type: z.enum(["income", "expense"]).describe("Receipt type"),
+						description: z.string().optional().describe("Description"),
+					}),
 					execute: async ({ title, amount, date, category, type, description }) => {
 						const receipt = await caller.receipts.create({
 							title,
@@ -154,14 +126,10 @@ export async function POST(req: Request) {
 				},
 				updateInventory: {
 					description: "Update inventory item stock",
-					parameters: {
-						type: "object",
-						properties: {
-							id: { type: "string", description: "Inventory item ID" },
-							quantity: { type: "string", description: "New quantity" },
-						},
-						required: ["id", "quantity"],
-					},
+					inputSchema: z.object({
+						id: z.string().describe("Inventory item ID"),
+						quantity: z.string().describe("New quantity"),
+					}),
 					execute: async ({ id, quantity }) => {
 						const item = await caller.inventory.update({
 							id,
@@ -173,7 +141,7 @@ export async function POST(req: Request) {
 			},
 		});
 
-		return result.toDataStreamResponse();
+		return result.toUIMessageStreamResponse();
 	} catch (error) {
 		console.error("Chat error:", error);
 		return new Response("Internal Server Error", { status: 500 });

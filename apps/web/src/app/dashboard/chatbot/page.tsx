@@ -2,16 +2,29 @@
 
 import { useState } from "react";
 import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, Send } from "lucide-react";
 
 export default function ChatbotPage() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading } =
-    useChat({
+  const [input, setInput] = useState("");
+  const { messages, sendMessage, status } = useChat({
+    transport: new DefaultChatTransport({
       api: "/api/chat",
-    });
+    }),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim()) {
+      sendMessage({ text: input });
+      setInput("");
+    }
+  };
+
+  const isLoading = status === "submitted" || status === "streaming";
 
   return (
     <div className="container mx-auto py-10">
@@ -35,29 +48,34 @@ export default function ChatbotPage() {
                 </p>
               </div>
             )}
-            {messages.map(
-              (message: { id: string; role: string; content: string }) => (
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex ${
+                  message.role === "user" ? "justify-end" : "justify-start"
+                }`}
+              >
                 <div
-                  key={message.id}
-                  className={`flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
+                  className={`max-w-[80%] rounded-lg p-4 ${
+                    message.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted"
                   }`}
                 >
-                  <div
-                    className={`max-w-[80%] rounded-lg p-4 ${
-                      message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
-                    }`}
-                  >
-                    <div className="font-semibold mb-1">
-                      {message.role === "user" ? "You" : "Assistant"}
-                    </div>
-                    <div className="whitespace-pre-wrap">{message.content}</div>
+                  <div className="font-semibold mb-1">
+                    {message.role === "user" ? "You" : "Assistant"}
+                  </div>
+                  <div className="whitespace-pre-wrap">
+                    {message.parts.map((part, index) => {
+                      if (part.type === "text") {
+                        return <span key={index}>{part.text}</span>;
+                      }
+                      return null;
+                    })}
                   </div>
                 </div>
-              )
-            )}
+              </div>
+            ))}
             {isLoading && (
               <div className="flex justify-start">
                 <div className="max-w-[80%] rounded-lg p-4 bg-muted">
@@ -70,7 +88,7 @@ export default function ChatbotPage() {
           <form onSubmit={handleSubmit} className="flex gap-2">
             <Input
               value={input}
-              onChange={handleInputChange}
+              onChange={(e) => setInput(e.target.value)}
               placeholder="Ask about your finances..."
               disabled={isLoading}
               className="flex-1"
